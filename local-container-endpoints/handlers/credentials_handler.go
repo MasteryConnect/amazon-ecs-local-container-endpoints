@@ -16,7 +16,9 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -180,11 +182,20 @@ func (service *CredentialService) getRoleCredentials(roleName string) (*Credenti
 
 func (service *CredentialService) getRoleCredentialsFromArn(roleArn, roleName string) (*CredentialResponse, error) {
 	logrus.Debugf("Requesting credentials for role with ARN %s", roleArn)
+	// Check for a custom STS role session name
+	roleSessionName := os.Getenv(config.STSRoleSessionName)
+	if roleSessionName == "" {
+		// The role session name does not allow a '/' hence the string replace. This
+		// is allowed in a role ARN when using a path other than the default '/'
+		// For example arn:aws:iam::1234567890:role/path/MyRole-AJJHDSKSDF will
+		// produce a roleName of path/MyRole-AJJHDSKSDF
+		roleSessionName = utils.Truncate(fmt.Sprintf("ecs-local-%s", strings.ReplaceAll(roleName, "/", "_")), roleSessionNameLength)
+	}
 
 	creds, err := service.stsClient.AssumeRole(&sts.AssumeRoleInput{
 		RoleArn:         aws.String(roleArn),
 		DurationSeconds: aws.Int64(temporaryCredentialsDurationInS),
-		RoleSessionName: aws.String(utils.Truncate(fmt.Sprintf("ecs-local-%s", roleName), roleSessionNameLength)),
+		RoleSessionName: aws.String(roleSessionName),
 	})
 
 	if err != nil {

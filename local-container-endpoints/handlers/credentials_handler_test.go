@@ -15,6 +15,7 @@ package handlers
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -25,17 +26,21 @@ import (
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/awslabs/amazon-ecs-local-container-endpoints/local-container-endpoints/clients/iam/mock_iamiface"
 	"github.com/awslabs/amazon-ecs-local-container-endpoints/local-container-endpoints/clients/sts/mock_stsiface"
+	"github.com/awslabs/amazon-ecs-local-container-endpoints/local-container-endpoints/config"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 )
 
 const (
-	roleName             = "clyde_task_role"
-	roleARN              = "arn:aws:iam::111111111111111:role/clyde_task_role"
-	secretKey            = "SKID"
-	accessKey            = "AKID"
-	sessionToken         = "token"
-	expirationTimeString = "2009-11-10T23:00:00Z"
+	roleName                 = "clyde_task_role"
+	roleARN                  = "arn:aws:iam::111111111111111:role/clyde_task_role"
+	roleNameWithPath         = "path1/path2/clyde_task_role"
+	roleARNWithPath          = "arn:aws:iam::111111111111111:role/path1/path2/clyde_task_role"
+	secretKey                = "SKID"
+	accessKey                = "AKID"
+	sessionToken             = "token"
+	expirationTimeString     = "2009-11-10T23:00:00Z"
+	customSTSRoleSessionName = "custom_sts_role_session_name"
 )
 
 func TestGetRoleCredentials(t *testing.T) {
@@ -57,6 +62,87 @@ func TestGetRoleCredentials(t *testing.T) {
 		stsMock.EXPECT().AssumeRole(gomock.Any()).Do(func(x interface{}) {
 			input := x.(*sts.AssumeRoleInput)
 			assert.Equal(t, roleARN, aws.StringValue(input.RoleArn), "Expected role ARN to match")
+		}).Return(&sts.AssumeRoleOutput{
+			Credentials: &sts.Credentials{
+				AccessKeyId:     aws.String(accessKey),
+				SecretAccessKey: aws.String(secretKey),
+				SessionToken:    aws.String(sessionToken),
+				Expiration:      &expiration,
+			},
+		}, nil),
+	)
+
+	response, err := credsService.getRoleCredentials(roleName)
+	assert.NoError(t, err, "Unexpected error calling getRoleCredentials")
+	assert.Equal(t, response.AccessKeyID, accessKey, "Expected access key to match")
+	assert.Equal(t, response.SecretAccessKey, secretKey, "Expected secret key to match")
+	assert.Equal(t, response.Token, sessionToken, "Expected session token to match")
+	assert.Equal(t, response.Expiration, expirationTimeString, "Expected expiration to match")
+	assert.Equal(t, response.RoleArn, roleARN, "Expected role ARN to match")
+
+}
+
+func TestGetRoleCredentialsWithPath(t *testing.T) {
+	iamMock, stsMock := setupMocks(t)
+
+	credsService := newCredentialServiceInTest(iamMock, stsMock)
+
+	expiration, _ := time.Parse(CredentialExpirationTimeFormat, expirationTimeString)
+
+	gomock.InOrder(
+		iamMock.EXPECT().GetRole(gomock.Any()).Do(func(x interface{}) {
+			input := x.(*iam.GetRoleInput)
+			assert.Equal(t, roleNameWithPath, aws.StringValue(input.RoleName), "Expected role name to match")
+		}).Return(&iam.GetRoleOutput{
+			Role: &iam.Role{
+				Arn: aws.String(roleARNWithPath),
+			},
+		}, nil),
+		stsMock.EXPECT().AssumeRole(gomock.Any()).Do(func(x interface{}) {
+			input := x.(*sts.AssumeRoleInput)
+			assert.Equal(t, roleARNWithPath, aws.StringValue(input.RoleArn), "Expected role ARN to match")
+		}).Return(&sts.AssumeRoleOutput{
+			Credentials: &sts.Credentials{
+				AccessKeyId:     aws.String(accessKey),
+				SecretAccessKey: aws.String(secretKey),
+				SessionToken:    aws.String(sessionToken),
+				Expiration:      &expiration,
+			},
+		}, nil),
+	)
+
+	response, err := credsService.getRoleCredentials(roleNameWithPath)
+	assert.NoError(t, err, "Unexpected error calling getRoleCredentials")
+	assert.Equal(t, response.AccessKeyID, accessKey, "Expected access key to match")
+	assert.Equal(t, response.SecretAccessKey, secretKey, "Expected secret key to match")
+	assert.Equal(t, response.Token, sessionToken, "Expected session token to match")
+	assert.Equal(t, response.Expiration, expirationTimeString, "Expected expiration to match")
+	assert.Equal(t, response.RoleArn, roleARNWithPath, "Expected role ARN to match")
+
+}
+
+func TestGetRoleCredentialsWithCustomSTSRoleSessionName(t *testing.T) {
+	iamMock, stsMock := setupMocks(t)
+
+	os.Setenv(config.STSRoleSessionName, customSTSRoleSessionName)
+
+	credsService := newCredentialServiceInTest(iamMock, stsMock)
+
+	expiration, _ := time.Parse(CredentialExpirationTimeFormat, expirationTimeString)
+
+	gomock.InOrder(
+		iamMock.EXPECT().GetRole(gomock.Any()).Do(func(x interface{}) {
+			input := x.(*iam.GetRoleInput)
+			assert.Equal(t, roleName, aws.StringValue(input.RoleName), "Expected role name to match")
+		}).Return(&iam.GetRoleOutput{
+			Role: &iam.Role{
+				Arn: aws.String(roleARN),
+			},
+		}, nil),
+		stsMock.EXPECT().AssumeRole(gomock.Any()).Do(func(x interface{}) {
+			input := x.(*sts.AssumeRoleInput)
+			assert.Equal(t, roleARN, aws.StringValue(input.RoleArn), "Expected role ARN to match")
+			assert.Equal(t, customSTSRoleSessionName, aws.StringValue(input.RoleSessionName), "Expected role ARN to match")
 		}).Return(&sts.AssumeRoleOutput{
 			Credentials: &sts.Credentials{
 				AccessKeyId:     aws.String(accessKey),

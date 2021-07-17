@@ -37,6 +37,9 @@ const (
 	// User-defined, static metadata that overrides/augments the normal response
 	ContainerMetadataPathVar = "CONTAINER_METADATA_PATH"
 	TaskMetadataPathVar      = "TASK_METADATA_PATH"
+
+	// User-defined, STS role session name
+	STSRoleSessionName = "STS_ROLE_SESSION_NAME"
 )
 
 // Defaults
@@ -70,7 +73,7 @@ const (
 	RoleCredentialsPathWithSlash = RoleCredentialsPath + "/"
 
 	//RoleArnCredentialsPath is the path for obtaining credentials from a role ARN
-	RoleArnCredentialsPath = "/role-arn/{roleArn}/{roleName}"
+	RoleArnCredentialsPath = "/role-arn/{roleArn}/{roleName:.+}"
 	// RoleArnCredentialsPathWithSlash adds a trailing slash
 	RoleArnCredentialsPathWithSlash = RoleArnCredentialsPath + "/"
 
